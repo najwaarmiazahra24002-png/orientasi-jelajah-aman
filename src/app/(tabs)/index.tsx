@@ -1,6 +1,13 @@
 // src/app/(tabs)/index.tsx
 import { useState, useEffect, useRef } from "react";
-import { View, Text, ActivityIndicator, Button, TouchableOpacity } from "react-native";
+import { mintaIzinLokasi, ambilKoordinatSaatIni } from "../../services/locationService";
+import { 
+  View, 
+  Text, 
+  ActivityIndicator, 
+  Button, 
+  TouchableOpacity 
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import SearchBox from "../../components/SearchBox";
@@ -23,6 +30,8 @@ export default function HalamanUtama() {
   const [kualitasUdara, setKualitasUdara] = useState<DataKualitasUdara | null>(null);
   const [sedangMemuat, setSedangMemuat] = useState(false);
   const [pesanError, setPesanError] = useState<string | null>(null);
+
+  const [pesanLokasi, setPesanLokasi] = useState<string | null>(null);
 
   const teksTertunda = useDebounce(teksCari, 500);
   const requestIdRef = useRef(0); // pencegah race condition
@@ -61,9 +70,34 @@ export default function HalamanUtama() {
     }
   }
 
+  async function gunakanLokasiSaatIni() {
+    const status = await mintaIzinLokasi();
+    
+    if (status === "denied") {
+      setPesanLokasi("Izin lokasi ditolak. Silakan cari kota secara manual di atas.");
+      return;
+      }
+
+    if (status === "unavailable") {
+      setPesanLokasi("Layanan lokasi tidak aktif di perangkat ini. Silakan cari kota secara manual.");
+      return;
+      }
+
+    setPesanLokasi(null);
+    const koordinat = await ambilKoordinatSaatIni();
+    pilihKota({
+      id: -1,
+      name: "Lokasi Saat Ini",
+      latitude: koordinat.latitude,
+      longitude: koordinat.longitude,
+      country: "",
+    });
+  }
+
   return (
     <SafeAreaView style={{ flex: 1, padding: 16, gap: 16 }}>
       <SearchBox onCari={setTeksCari} />
+      <Button title="Gunakan Lokasi Saat Ini" onPress={gunakanLokasiSaatIni} /> {pesanLokasi && <Text>{pesanLokasi}</Text>}
 
       {hasilPencarian.map((kota) => (
         <TouchableOpacity key={kota.id} onPress={() => pilihKota(kota)}>
@@ -100,19 +134,19 @@ export default function HalamanUtama() {
           Suhu minimal: {cuaca.harian.suhuMinimal[0]}°C
         </Text>
 
+        {cuaca && (
+        <Text style={{ fontSize: 12, color: "#888" }}>
+          Kondisi: {labelKodeCuaca(cuaca.saatIni.kodeCuaca)} • Angin
+          {cuaca.saatIni.kecepatanAngin} km/j
+        </Text>
+      )}
+
         {/* Latihan Mandiri 2 Modul 5 */}
         <Text style={{ fontSize: 12, marginTop: 4 }}>
           PM2.5: {kualitasUdara.pm25} | PM10: {kualitasUdara.pm10} 
         </Text>
       </View>
     )}
-
-      {cuaca && (
-        <Text style={{ fontSize: 12, color: "#888" }}>
-          Kondisi: {labelKodeCuaca(cuaca.saatIni.kodeCuaca)} • Angin
-          {cuaca.saatIni.kecepatanAngin} km/j
-        </Text>
-      )}
 
       <AtribusiCuaca />
     </SafeAreaView>

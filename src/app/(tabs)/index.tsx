@@ -1,6 +1,7 @@
 // src/app/(tabs)/index.tsx
 import { useState, useEffect, useRef } from "react";
 import { mintaIzinLokasi, ambilKoordinatSaatIni } from "../../services/locationService";
+import { router } from "expo-router";
 import { 
   View, 
   Text, 
@@ -118,35 +119,49 @@ export default function HalamanUtama() {
       )}
 
       {cuaca && kualitasUdara && kotaTerpilih && !sedangMemuat && (
-      <View>
-        <WeatherCard
-          kota={kotaTerpilih.name}
-          suhu={cuaca.saatIni.suhu}
-          tingkatAQI={konversiTingkatAQI(kualitasUdara.indeksAQI)}
-          indeksAQI={kualitasUdara.indeksAQI}
-        />
+        <View>
+          <WeatherCard
+            kota={kotaTerpilih.name}
+            suhu={cuaca.saatIni.suhu}
+            tingkatAQI={konversiTingkatAQI(kualitasUdara.indeksAQI)}
+            indeksAQI={kualitasUdara.indeksAQI}
+          />
 
-        {/* Latihan Mandiri 1 Modul 5 */}
-        <Text>
-          Suhu maksimal: {cuaca.harian.suhuMaksimal[0]}°C
-        </Text>
-        <Text>
-          Suhu minimal: {cuaca.harian.suhuMinimal[0]}°C
-        </Text>
+          <Button
+            title="Tambahkan ke Favorit"
+            onPress={() =>
+              router.push({
+                pathname: "/tambah-favorit",
+                params: {
+                  id: String(kotaTerpilih.id),
+                  nama: kotaTerpilih.name,
+                  lat: String(kotaTerpilih.latitude),
+                  lon: String(kotaTerpilih.longitude),
+                },
+              })
+            }
+          />
 
-        {cuaca && (
-        <Text style={{ fontSize: 12, color: "#888" }}>
-          Kondisi: {labelKodeCuaca(cuaca.saatIni.kodeCuaca)} • Angin
-          {cuaca.saatIni.kecepatanAngin} km/j
-        </Text>
+          {/* Latihan Mandiri 1 Modul 5 */}
+          <Text>
+            Suhu maksimal: {cuaca.harian.suhuMaksimal[0]}°C
+          </Text>
+
+          <Text>
+            Suhu minimal: {cuaca.harian.suhuMinimal[0]}°C
+          </Text>
+
+          <Text style={{ fontSize: 12, color: "#888" }}>
+            Kondisi: {labelKodeCuaca(cuaca.saatIni.kodeCuaca)} • Angin{" "}
+            {cuaca.saatIni.kecepatanAngin} km/j
+          </Text>
+
+          {/* Latihan Mandiri 2 Modul 5 */}
+          <Text style={{ fontSize: 12, marginTop: 4 }}>
+            PM2.5: {kualitasUdara.pm25} | PM10: {kualitasUdara.pm10}
+          </Text>
+        </View>
       )}
-
-        {/* Latihan Mandiri 2 Modul 5 */}
-        <Text style={{ fontSize: 12, marginTop: 4 }}>
-          PM2.5: {kualitasUdara.pm25} | PM10: {kualitasUdara.pm10} 
-        </Text>
-      </View>
-    )}
 
       <AtribusiCuaca />
     </SafeAreaView>

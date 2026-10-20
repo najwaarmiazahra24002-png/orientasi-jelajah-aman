@@ -4,54 +4,62 @@ import {
   mintaIzinLokasi,
   ambilKoordinatSaatIni,
 } from "../../services/locationService";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import {
   View,
   Text,
-  ScrollView, // TAMBAHAN OFFLINE-FIRST: wadah agar halaman dapat di-scroll
+  ScrollView,
   ActivityIndicator,
   Button,
   TouchableOpacity,
+  Alert,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import SearchBox from "../../components/SearchBox";
 import WeatherCard from "../../components/WeatherCard";
 import AtribusiCuaca from "../../components/AtribusiCuaca";
-import StatusData from "../../components/StatusData"; // TAMBAHAN OFFLINE-FIRST: menampilkan sumber/status data
+import StatusData from "../../components/StatusData";
 import { useDebounce } from "../../hooks/use-debounce";
 import { cariKota } from "../../services/geocodingService";
 
-// TAMBAHAN OFFLINE-FIRST: mengambil cuaca dari cache atau sumber online
-import {ambilCuacaOfflineFirst, BATAS_CACHE_MS,} from "../../services/cuacaRepository";
+import {
+  ambilCuacaOfflineFirst,
+  BATAS_CACHE_MS,
+} from "../../services/cuacaRepository";
 
-// TAMBAHAN OFFLINE-FIRST: mengelola cache cuaca tersimpan
-import {bersihkanCacheLama, daftarKotaTersimpan,} from "../../services/cacheRepository";
+import {
+  bersihkanCacheLama,
+  daftarKotaTersimpan
+} from "../../services/cacheRepository";
 
 import { konversiTingkatAQI } from "../../services/weatherAdapter";
-
-// Fitur lama: memuat daftar favorit
 import { ambilSemuaFavorit } from "../../services/favoritStorage";
+// UTS - Fitur 2
+import { simpanRiwayat } from "../../services/riwayatStorage";
 
 import { labelKodeCuaca } from "../../constants/weatherCodes";
 import { HasilGeocoding } from "../../types/geocoding";
 
-// TAMBAHAN OFFLINE-FIRST: tipe hasil cuaca dan ringkasan cache
-import {
-  HasilCuacaOffline,
-  RingkasanKotaTersimpan,
-} from "../../types/cache";
+import { HasilCuacaOffline, RingkasanKotaTersimpan } from "../../types/cache";
+
+// UTS - Fitur 4
+import { useTema } from "../../context/ThemeContext";
 
 export default function HalamanUtama() {
+  // UTS - Fitur 4
+  const { warna } = useTema();
+
   const [teksCari, setTeksCari] = useState("");
   const [hasilPencarian, setHasilPencarian] = useState<HasilGeocoding[]>([]);
   const [kotaTerpilih, setKotaTerpilih] = useState<HasilGeocoding | null>(null);
 
-  // TAMBAHAN OFFLINE-FIRST: menggantikan dua state cuaca lama dengan hasil repository
   const [hasil, setHasil] = useState<HasilCuacaOffline | null>(null);
 
-  // TAMBAHAN OFFLINE-FIRST: daftar kota yang mempunyai cache tersimpan
-  const [kotaTersimpan, setKotaTersimpan] = useState<RingkasanKotaTersimpan[]>([]);
+  const [kotaTersimpan, setKotaTersimpan] = useState<RingkasanKotaTersimpan[]>(
+    [],
+  );
 
   const [sedangMemuat, setSedangMemuat] = useState(false);
   const [pesanError, setPesanError] = useState<string | null>(null);
@@ -62,20 +70,25 @@ export default function HalamanUtama() {
   const [daftarFavorit, setDaftarFavorit] = useState<{ id: number }[]>([]);
 
   const teksTertunda = useDebounce(teksCari, 500);
-  const requestIdRef = useRef(0); // pencegah race condition
+  const requestIdRef = useRef(0);
 
-  // TAMBAHAN OFFLINE-FIRST: memuat daftar kota yang cache-nya tersedia
+  // UTS - Fitur 2
+  const params = useLocalSearchParams<{
+    riwayatId?: string;
+    nama?: string;
+    lat?: string;
+    lon?: string;
+    negara?: string;
+  }>();
+  const riwayatDiprosesRef = useRef<string | null>(null);
+
   async function muatKotaTersimpan() {
     try {
       const daftar = await daftarKotaTersimpan();
       setKotaTersimpan(daftar);
-    } catch {
-      // Gagal membaca daftar cache tidak menghentikan aplikasi
-    }
+    } catch {}
   }
 
-  // TAMBAHAN OFFLINE-FIRST: membersihkan cache yang sudah melewati batas waktu
-  // Saat aplikasi dibuka: buang cache > 7 hari, lalu tampilkan daftar tersimpan
   useEffect(() => {
     bersihkanCacheLama(BATAS_CACHE_MS)
       .then(() => muatKotaTersimpan())
@@ -88,7 +101,6 @@ export default function HalamanUtama() {
       return;
     }
 
-    // TAMBAHAN OFFLINE-FIRST: mencegah hasil pencarian lama menimpa hasil terbaru
     let aktif = true;
 
     cariKota(teksTertunda)
@@ -99,7 +111,6 @@ export default function HalamanUtama() {
         if (aktif) setHasilPencarian([]);
       });
 
-    // TAMBAHAN OFFLINE-FIRST: membatalkan pembaruan state dari pencarian sebelumnya
     return () => {
       aktif = false;
     };
@@ -118,21 +129,14 @@ export default function HalamanUtama() {
     kotaTerpilih !== null &&
     daftarFavorit.some((kota) => kota.id === kotaTerpilih.id);
 
-  // TAMBAHAN OFFLINE-FIRST: parameter paksaPerbarui digunakan untuk memaksa pengambilan data baru
-  async function pilihKota(
-    kota: HasilGeocoding,
-    paksaPerbarui = false,
-  ) {
+  async function pilihKota(kota: HasilGeocoding, paksaPerbarui = false) {
     setKotaTerpilih(kota);
     const idSaatIni = ++requestIdRef.current;
     setSedangMemuat(true);
     setPesanError(null);
-
-    // TAMBAHAN OFFLINE-FIRST: menghapus pesan lokasi sebelumnya saat kota dipilih
     setPesanLokasi(null);
 
     try {
-      // TAMBAHAN OFFLINE-FIRST: menggunakan cache terlebih dahulu sesuai repository
       const data = await ambilCuacaOfflineFirst(
         {
           id: kota.id,
@@ -143,17 +147,22 @@ export default function HalamanUtama() {
         { paksaPerbarui },
       );
 
-      if (idSaatIni !== requestIdRef.current) return; // hasil basi, abaikan
+      if (idSaatIni !== requestIdRef.current) return;
 
-      // TAMBAHAN OFFLINE-FIRST: menyimpan hasil cuaca dan kualitas udara
       setHasil(data);
+      // UTS - Fitur 2 :
+      if (kota.id !== -1) {
+        try {
+          await simpanRiwayat(kota);
+        } catch (err) {
+          console.error("Gagal menyimpan riwayat pencarian:", err);
+        }
+      }
 
-      // TAMBAHAN OFFLINE-FIRST: memperbarui daftar cache setelah pengambilan data
       await muatKotaTersimpan();
     } catch (err) {
       if (idSaatIni !== requestIdRef.current) return;
 
-      // TAMBAHAN OFFLINE-FIRST: menampilkan pesan ketika data cache dan internet tidak tersedia
       setHasil(null);
       setPesanError(
         "Belum ada data tersimpan dan tidak ada koneksi internet. " +
@@ -163,6 +172,42 @@ export default function HalamanUtama() {
       if (idSaatIni === requestIdRef.current) setSedangMemuat(false);
     }
   }
+
+  // UTS - Fitur 2
+  useEffect(() => {
+    const { riwayatId, nama, lat, lon, negara } = params;
+
+    if (!riwayatId || !nama || !lat || !lon) return;
+
+    const kunci = `${riwayatId}-${nama}-${lat}-${lon}`;
+
+    if (riwayatDiprosesRef.current === kunci) return;
+
+    const latitude = Number(lat);
+    const longitude = Number(lon);
+    const id = Number(riwayatId);
+
+    if (
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude) ||
+      !Number.isFinite(id)
+    ) {
+      return;
+    }
+
+    riwayatDiprosesRef.current = kunci;
+
+    const kota: HasilGeocoding = {
+      id,
+      name: nama,
+      latitude,
+      longitude,
+      country: negara ?? "",
+    };
+
+    setTeksCari(nama);
+    pilihKota(kota);
+  }, [params.riwayatId, params.nama, params.lat, params.lon, params.negara]);
 
   async function gunakanLokasiSaatIni() {
     const status = await mintaIzinLokasi();
@@ -185,8 +230,6 @@ export default function HalamanUtama() {
 
     try {
       const koordinat = await ambilKoordinatSaatIni();
-
-      // TAMBAHAN OFFLINE-FIRST: lokasi saat ini juga menggunakan repository cache-first
       await pilihKota({
         id: -1,
         name: "Lokasi Saat Ini",
@@ -195,7 +238,6 @@ export default function HalamanUtama() {
         country: "",
       });
     } catch {
-      // TAMBAHAN OFFLINE-FIRST: menangani kegagalan mendapatkan koordinat perangkat
       setPesanLokasi(
         "Lokasi tidak berhasil diperoleh. Silakan cari kota secara manual.",
       );
@@ -203,8 +245,8 @@ export default function HalamanUtama() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
-      {/* TAMBAHAN OFFLINE-FIRST: ScrollView agar seluruh informasi bisa digulir */}
+    // UTS - Fitur 4
+    <SafeAreaView style={{ flex: 1, backgroundColor: warna.latar }}>
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 24 }}
@@ -212,26 +254,35 @@ export default function HalamanUtama() {
       >
         <SearchBox onCari={setTeksCari} />
 
-        <Button title="Gunakan Lokasi Saat Ini" onPress={gunakanLokasiSaatIni} />
+        <Button
+          title="Gunakan Lokasi Saat Ini"
+          onPress={gunakanLokasiSaatIni}
+        />
 
-        {pesanLokasi && <Text>{pesanLokasi}</Text>}
+        {/* UTS - Fitur 4 */}
+        {pesanLokasi && (
+          <Text style={{ color: warna.teks }}>{pesanLokasi}</Text>
+        )}
 
         {hasilPencarian.map((kota) => (
           <TouchableOpacity key={kota.id} onPress={() => pilihKota(kota)}>
-            <Text>{kota.name}</Text>
+            {/* UTS - Fitur 4 */}
+            <Text style={{ color: warna.teks }}>{kota.name}</Text>
           </TouchableOpacity>
         ))}
 
-        {/* TAMBAHAN OFFLINE-FIRST: menampilkan jumlah kota yang memiliki cache */}
-        <Text style={{ fontSize: 12, color: "#777777" }}>
-          Tersimpan {kotaTersimpan.length} kota
-        </Text>
-
-        {sedangMemuat && <ActivityIndicator />}
+        {/* UTS - Fitur 4 */}
+        <Text style={{ fontSize: 12, color: warna.teksPudar }}> Tersimpan {kotaTersimpan.length} kota </Text>
+    
+        {/* UTS - Fitur 4 */}
+        {sedangMemuat && <ActivityIndicator color={warna.aksen} />}
 
         {pesanError && (
           <View>
-            <Text accessibilityLabel={pesanError}>{pesanError}</Text>
+            {/* UTS - Fitur 4 */}
+            <Text accessibilityLabel={pesanError} style={{ color: warna.teks }}>
+              {pesanError}
+            </Text>
             <Button
               title="Coba Lagi"
               // TAMBAHAN OFFLINE-FIRST: mencoba kembali dengan memaksa pembaruan
@@ -240,7 +291,6 @@ export default function HalamanUtama() {
           </View>
         )}
 
-        {/* TAMBAHAN OFFLINE-FIRST: status data cache atau online */}
         {hasil && kotaTerpilih && !sedangMemuat && (
           <>
             <StatusData
@@ -251,39 +301,39 @@ export default function HalamanUtama() {
             <WeatherCard
               kota={kotaTerpilih.name}
               suhu={hasil.cuaca.saatIni.suhu}
-              tingkatAQI={konversiTingkatAQI(
-                hasil.kualitasUdara.indeksAQI,
-              )}
+              tingkatAQI={konversiTingkatAQI(hasil.kualitasUdara.indeksAQI)}
               indeksAQI={hasil.kualitasUdara.indeksAQI}
             />
 
             {/* Latihan Mandiri 1 Modul 5 */}
-            <Text>
+            {/* UTS - Fitur 4 */}
+            <Text style={{ color: warna.teks }}>
               Suhu maksimal: {hasil.cuaca.harian.suhuMaksimal[0]}°C
             </Text>
 
-            <Text>
+            {/* UTS - Fitur 4 */}
+            <Text style={{ color: warna.teks }}>
               Suhu minimal: {hasil.cuaca.harian.suhuMinimal[0]}°C
             </Text>
 
-            <Text style={{ fontSize: 12, color: "#888" }}>
+            {/* UTS - Fitur 4 */}
+            <Text style={{ fontSize: 12, color: warna.teksPudar }}>
               Kondisi: {labelKodeCuaca(hasil.cuaca.saatIni.kodeCuaca)} • Angin{" "}
               {hasil.cuaca.saatIni.kecepatanAngin} km/j
             </Text>
 
             {/* Latihan Mandiri 2 Modul 5 */}
-            <Text style={{ fontSize: 12, marginTop: 4 }}>
+            {/* UTS - Fitur 4 */}
+            <Text style={{ fontSize: 12, marginTop: 4, color: warna.teks }}>
               PM2.5: {hasil.kualitasUdara.pm25} | PM10:{" "}
               {hasil.kualitasUdara.pm10}
             </Text>
 
-            {/* TAMBAHAN OFFLINE-FIRST: tombol memperbarui data dari sumber online */}
             <Button
               title="Perbarui Sekarang"
               onPress={() => pilihKota(kotaTerpilih, true)}
             />
 
-            {/* Fitur lama: tombol favorit dengan status sudah ditambahkan */}
             <TouchableOpacity
               disabled={sudahFavorit}
               onPress={() =>
@@ -298,7 +348,8 @@ export default function HalamanUtama() {
                 })
               }
               style={{
-                backgroundColor: sudahFavorit ? "#BDBDBD" : "#2196F3",
+                // UTS - Fitur 4
+                backgroundColor: sudahFavorit ? "#BDBDBD" : warna.aksen,
                 paddingVertical: 10,
                 paddingHorizontal: 16,
                 borderRadius: 4,

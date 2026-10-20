@@ -2,7 +2,7 @@
 import * as SQLite from "expo-sqlite";
 
 const NAMA_DATABASE = "jelajah-aman.db";
-const VERSI_DATABASE = 1;
+const VERSI_DATABASE = 2;
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -43,11 +43,25 @@ async function migrasiDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
                 disimpan_pada INTEGER NOT NULL
             );
         `);
+        
     versiSaatIni = 1;
 }
+    // Migrasi UTS - Fitur 2
+    if (versiSaatIni < 2) {
+        await db.execAsync(`
+            CREATE TABLE IF NOT EXISTS riwayat_pencarian (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kota_id INTEGER NOT NULL,
+                nama_kota TEXT NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                negara TEXT NOT NULL DEFAULT '',
+                dicari_pada INTEGER NOT NULL
+            );
+        `);
 
-// Migrasi berikutnya ditambahkan di sini, contoh:
-// if (versiSaatIni < 2) { ...ALTER TABLE...; versiSaatIni = 2; }
+        versiSaatIni = 2;
+    }
 
     await db.execAsync("PRAGMA user_version = " + VERSI_DATABASE);
 }
